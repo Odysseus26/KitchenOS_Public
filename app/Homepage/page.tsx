@@ -60,6 +60,10 @@ export default function Homepage() {
     return <Signup_Loading />;
   }
 
+  if(user == null){
+    return <Crash message="User Not Fetched"/>
+  }
+
   switch (action) {
     case "Error":
       return (

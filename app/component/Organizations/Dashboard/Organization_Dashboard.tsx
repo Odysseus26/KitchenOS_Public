@@ -168,7 +168,7 @@ export default function Organization_Dashboard({ organization_details }: { organ
   };
 
   if (isLoading) return <Signup_Loading />;
-  if (crash) return <Crash message="Something went wrong trying to fetch organisation data." />;
+  if (crash||!organization) return <Crash message="Something went wrong trying to fetch organisation data." />;
 
   return (
   <section className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#0a0a0a] via-[#1a1a1a] to-[#0a0a0a]">

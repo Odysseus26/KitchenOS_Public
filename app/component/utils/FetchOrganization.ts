@@ -28,7 +28,7 @@ export async function OrganizationDetails(
           return null;
         }
       })
-      .filter((u): u is { user_id: string; level: number } => u !== null);
+      .filter((u:any): u is { user_id: string; level: number } => u !== null);
   }
 
   

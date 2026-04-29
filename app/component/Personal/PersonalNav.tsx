@@ -106,7 +106,7 @@ export default function Personal_Navigation({ onSelect }: { onSelect: (input: Na
               {NAV_ITEMS.map((item) => (
                 <button
                   key={item}
-                  ref={(el) => (itemRefs.current[item] = el)}
+                  ref={(el) => { itemRefs.current[item] = el; }}
                   onClick={() => handleSelect(item)}
                   className={`relative z-10 px-4 py-2 text-sm font-medium tracking-wide transition-all duration-200 ${
                     active === item ? "text-white" : "text-gray-500 hover:text-white"
