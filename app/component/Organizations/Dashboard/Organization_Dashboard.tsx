@@ -31,49 +31,47 @@ export default function Organization_Dashboard({ organization_details }: { organ
   const [newLevel, setNewLevel] = useState<number>(1);
 
   async function fetchOrganizationAndMembers() {
-    try {
-      const org = await OrganizationDetails(organization_details.organization_id, organization_details.user.id);
-      setOrganization(org);
+  try {
+    const org = await OrganizationDetails(organization_details.organization_id, organization_details.user.id);
+    setOrganization(org);
 
-      
-      const userIds: string[] = [];
-      const levelMap = new Map<string, number>();
-      for (const member of org.users) {
-        userIds.push(member.user_id);
-        levelMap.set(member.user_id, member.level);
-      }
-
-      if (userIds.length === 0) {
-        setMembers([]);
-        setLoading(false);
-        return;
-      }
-
-      
-      const { data: userData, error: fetchError } = await supabase
-        .from("User_Metadata")
-        .select("user_id, first_name, last_name, email")
-        .in("user_id", userIds);
-
-      if (fetchError) throw fetchError;
-      if (!userData) throw new Error("No user data returned");
-
-      const fullInfo: ExposedUser[] = userData.map((u) => ({
-        name: `${u.first_name} ${u.last_name}`,
-        email: u.email,
-        user_id: u.user_id,
-        level: levelMap.get(u.user_id) || 1,
-      }));
-      const nowInfo = fullInfo.filter(Element => Element.user_id != organization_details.user.id)
-
-      setMembers(nowInfo);
-    } catch (err) {
-      console.error(err);
-      setCrash(true);
-    } finally {
-      setTimeout(()=>setLoading(false),500)
+    const userIds: string[] = [];
+    const levelMap = new Map<string, number>();
+    for (const member of org.users) {
+      userIds.push(member.user_id);
+      levelMap.set(member.user_id, member.level);
     }
+
+    if (userIds.length === 0) {
+      setMembers([]);
+      setLoading(false);
+      return;
+    }
+
+    const { data: userData, error: fetchError } = await supabase
+      .from("User_Metadata")
+      .select("user_id, first_name, last_name, email")
+      .in("user_id", userIds);
+
+    if (fetchError) throw fetchError;
+    if (!userData) throw new Error("No user data returned");
+
+    const fullInfo: ExposedUser[] = userData.map((u) => ({
+      name: `${u.first_name} ${u.last_name}`,
+      email: u.email,
+      user_id: u.user_id,
+      level: levelMap.get(u.user_id) || 1,
+    }));
+
+
+    setMembers(fullInfo);
+  } catch (err) {
+    console.error(err);
+    setCrash(true);
+  } finally {
+    setLoading(false);
   }
+}
 
   useEffect(() => {
     fetchOrganizationAndMembers();
@@ -96,9 +94,19 @@ export default function Organization_Dashboard({ organization_details }: { organ
     setEditingUserId(null);
 
     
-    const usersForDb = updatedMembers.map((m) =>
+    const usersForDb: string[] = updatedMembers.map((m) =>
       JSON.stringify({ user_id: m.user_id, level: m.level })
     );
+
+    const {data:Itself,error:Itself_Error} = await supabase.auth.getUser();
+    if(Itself_Error) throw Itself_Error
+    const self_id = Itself.user.id;
+
+    usersForDb.push(JSON.stringify({
+    user_id: self_id,
+    level: 4
+    }))
+
 
     const { error: updateError } = await supabase
       .from("Organizations")
@@ -282,8 +290,8 @@ export default function Organization_Dashboard({ organization_details }: { organ
                     Kick
                   </button>
                 )}
-                {permissions.allowed_change && (
-                  editingUserId === member.user_id ? (
+                {permissions.allowed_change && member.user_id !== organization_details.user.id && (
+  editingUserId === member.user_id ? (
                     <div className="flex items-center gap-2">
                       <select
                         value={newLevel}
