@@ -94,18 +94,16 @@ export default function Organization_Dashboard({ organization_details }: { organ
     setEditingUserId(null);
 
     
-    const usersForDb: string[] = updatedMembers.map((m) =>
-      JSON.stringify({ user_id: m.user_id, level: m.level })
-    );
+    const { data: Itself, error: Itself_Error } = await supabase.auth.getUser();
+if (Itself_Error) throw Itself_Error;
+const self_id = Itself.user.id;
 
-    const {data:Itself,error:Itself_Error} = await supabase.auth.getUser();
-    if(Itself_Error) throw Itself_Error
-    const self_id = Itself.user.id;
-
-    usersForDb.push(JSON.stringify({
-    user_id: self_id,
-    level: 4
-    }))
+const usersForDb: string[] = updatedMembers.map((m) =>
+  JSON.stringify({
+    user_id: m.user_id,
+    level: m.user_id === self_id ? 4 : m.level,
+  })
+);
 
 
     const { error: updateError } = await supabase
