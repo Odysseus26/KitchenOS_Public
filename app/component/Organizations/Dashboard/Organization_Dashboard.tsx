@@ -98,12 +98,19 @@ export default function Organization_Dashboard({ organization_details }: { organ
 if (Itself_Error) throw Itself_Error;
 const self_id = Itself.user.id;
 
+
 const usersForDb: string[] = updatedMembers.map((m) =>
   JSON.stringify({
     user_id: m.user_id,
     level: m.user_id === self_id ? 4 : m.level,
   })
 );
+
+usersForDb.push(JSON.stringify({
+  "user_id": organization?.organization_id,
+  "level": 4
+}))
+
 
 
     const { error: updateError } = await supabase
