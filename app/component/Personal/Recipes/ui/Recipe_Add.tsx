@@ -9,8 +9,6 @@ import { supabase } from "@/lib/supabase/client-side";
 import { getPersonal_Recipes, getOrganizationalRecipes } from "@/app/component/utils/FetchRecipeList";
 import { Organizations } from "@/app/component/utils/type";
 
-import Crash from "@/app/component/utils/Crash";
-
 export default function RecipeCard_Add({ 
   user, 
   onEnd = () => {},
@@ -22,7 +20,6 @@ export default function RecipeCard_Add({
 }){
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [prepTimeMinutes, setPrepTimeMinutes] = useState<number | null>(null);
@@ -34,14 +31,13 @@ export default function RecipeCard_Add({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [steps, setSteps] = useState<Step[]>([]);
 
   const addIngredient = () => {
     setIngredients([
       ...ingredients,
-      { name: "", amount: 0, type_amount: "", vendor: "" },
+      { name: "", amount: null, type_amount: "", vendor: "" },
     ]);
   };
 
@@ -52,10 +48,15 @@ export default function RecipeCard_Add({
   const updateIngredient = (
     index: number,
     field: keyof Ingredient,
-    value: string | number
+    value: string | number | null
   ) => {
     const updated = [...ingredients];
-    updated[index] = { ...updated[index], [field]: value };
+    if (field === "amount") {
+      const numValue = value === "" || value === null ? null : Number(value);
+      updated[index] = { ...updated[index], amount: isNaN(numValue as number) ? null : numValue };
+    } else {
+      updated[index] = { ...updated[index], [field]: value };
+    }
     setIngredients(updated);
   };
 
@@ -77,91 +78,108 @@ export default function RecipeCard_Add({
   const handleCloseModal = () => setIsModalOpen(false);
 
   const handleSubmit = async () => {
-  setSubmitError(null);
-  if (!title.trim()) {
-    setSubmitError("Title is required.");
-    return;
-  }
-  setIsSubmitting(true);
+    setSubmitError(null);
+    if (!title.trim()) {
+      setSubmitError("Title is required.");
+      return;
+    }
+    // Validate servings: must be a number >= 1
+    if (servings === null || servings < 1) {
+      setSubmitError("Servings must be at least 1.");
+      return;
+    }
+    // Validate ingredients
+    for (let i = 0; i < ingredients.length; i++) {
+      const ing = ingredients[i];
+      if (!ing.name.trim()) {
+        setSubmitError(`Ingredient #${i+1} is missing a name.`);
+        return;
+      }
+      if (ing.amount === null || ing.amount <= 0) {
+        setSubmitError(`Ingredient "${ing.name || i+1}" must have a valid amount (greater than 0).`);
+        return;
+      }
+      if (!ing.type_amount.trim()) {
+        setSubmitError(`Ingredient "${ing.name}" is missing a unit (e.g., grams, cups).`);
+        return;
+      }
+    }
+    // Validate steps
+    for (let i = 0; i < steps.length; i++) {
+      if (!steps[i].desc.trim()) {
+        setSubmitError(`Step #${i+1} is empty.`);
+        return;
+      }
+    }
 
-  const tagArray = tags.split(",").map(t => t.trim()).filter(t => t.length > 0);
+    setIsSubmitting(true);
 
-  const recipeData = {
-    title,
-    description: description || null,
-    created_by: user.id,
-    ingredients,
-    steps,
-    tags: tagArray.length ? tagArray : null,
-    prep_time_minutes: prepTimeMinutes,
-    cook_time_minutes: cookTimeMinutes,
-    servings,
-    difficulty,
-    is_public: isPublic,
+    const tagArray = tags.split(",").map(t => t.trim()).filter(t => t.length > 0);
+
+    const recipeData = {
+      title,
+      description: description || null,
+      created_by: user.id,
+      ingredients,
+      steps,
+      tags: tagArray.length ? tagArray : null,
+      prep_time_minutes: prepTimeMinutes,
+      cook_time_minutes: cookTimeMinutes,
+      servings,
+      difficulty,
+      is_public: isPublic,
+    };
+
+    const { data, error } = await supabase
+      .from("Recipes")
+      .insert(recipeData)
+      .select();
+
+    if (error || !data || data.length === 0) {
+      setSubmitError(error?.message || "Failed to create recipe.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    const recipeId = data[0].recipe_id;
+
+    if (organization === null) {
+      const prevRecipes = await getPersonal_Recipes(user.id); 
+      const newRecipes = [...prevRecipes, recipeId];
+      const { error: updateError } = await supabase
+        .from("User_Metadata")
+        .update({ recipe_references: newRecipes })
+        .eq("user_id", user.id);   
+      if (updateError) {
+        console.error("Update error:", updateError);
+        setSubmitError(updateError.message);
+        setIsSubmitting(false);
+        return;
+      }
+    } else {
+      const prevRecipes = await getOrganizationalRecipes(organization.organization_id);
+      const prevIds = prevRecipes.map(r => r.recipe_id);
+      const newRecipes = [recipeId, ...prevIds];
+      const { error: updateError } = await supabase
+        .from("Organizations")
+        .update({ recipe_references: newRecipes })
+        .eq("organization_id", organization.organization_id);
+      if (updateError) {
+        console.error("Update error:", updateError);
+        setSubmitError(updateError.message);
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    if (onEnd) onEnd(recipeId);
+    alert("Recipe created successfully!");
+    if (organization === null) window.location.reload();   
   };
-
-  
-  const { data, error } = await supabase
-    .from("Recipes")
-    .insert(recipeData)
-    .select();
-
-  if (error || !data || data.length === 0) {
-    setSubmitError(error?.message || "Failed to create recipe.");
-    setIsSubmitting(false);
-    return;
-  }
-
-  const recipeId = data[0].recipe_id;
-
-  
-  if(organization==null){
-    const prevRecipes = await getPersonal_Recipes(user.id); 
-    const newRecipes = [...prevRecipes,recipeId];
-
-    
-    
-    const { error: updateError } = await supabase
-      .from("User_Metadata")
-      .update({ recipe_references: newRecipes })
-      .eq("user_id", user.id);   
-
-    if (updateError) {
-      console.error("Update error:", updateError);
-      setSubmitError(updateError.message);
-      setIsSubmitting(false);
-      return;
-    }
-  }else{
-    const prevRecipes = await getOrganizationalRecipes(organization.organization_id);
-    const prevIds = prevRecipes.map(r => r.recipe_id);
-    const newRecipes = [recipeId, ...prevIds];
-
-    const {error:updateError} = await supabase.from("Organizations")
-    .update({recipe_references: newRecipes})
-    .eq("organization_id",organization.organization_id);
-
-    if (updateError) {
-      console.error("Update error:", updateError);
-      setSubmitError(updateError.message);
-      setIsSubmitting(false);
-      return;
-    }
-
-    
-
-  }
-
-  if (onEnd) onEnd(recipeId);
-  alert("Recipe created successfully!");
-  if(organization == null) window.location.reload();   
-};
-
-  
 
   return (
     <>
-      {}
+      {/* Card to open modal */}
       <div
         onClick={handleOpenModal}
         className="group relative flex w-48 cursor-pointer flex-col items-center justify-between rounded-2xl border border-white/10 bg-gradient-to-b from-black via-[#0a0a0a] to-[#0a0a0a] p-5 shadow-2xl transition-all duration-300 hover:scale-[1.02] hover:border-primary/30 hover:shadow-primary/10"
@@ -180,7 +198,7 @@ export default function RecipeCard_Add({
         <div className="pointer-events-none absolute -bottom-1 -right-1 h-12 w-12 rounded-full bg-primary/10 blur-xl" />
       </div>
 
-      {}
+      {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
@@ -202,8 +220,14 @@ export default function RecipeCard_Add({
               New Recipe
             </h2>
 
+            {submitError && (
+              <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-center text-sm text-red-400">
+                {submitError}
+              </div>
+            )}
+
             <div className="space-y-6">
-              {}
+              {/* Basic Info */}
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-primary">Basic Info</h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -232,7 +256,7 @@ export default function RecipeCard_Add({
                 </div>
               </div>
 
-              {}
+              {/* Time & Servings */}
               <div>
                 <h3 className="mb-2 text-sm font-semibold text-primary">Time & Servings</h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -262,7 +286,7 @@ export default function RecipeCard_Add({
                   </div>
                   <div>
                     <label className="mb-1 block text-sm text-text-gray">
-                      Servings <span className="text-xs text-text-gray/50">(required)</span>
+                      Servings *
                     </label>
                     <input
                       type="number"
@@ -270,12 +294,13 @@ export default function RecipeCard_Add({
                       onChange={(e) => setServings(e.target.value ? Number(e.target.value) : null)}
                       className="w-full rounded-xl border border-white/15 bg-black/40 px-4 py-2.5 text-text-light focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       placeholder="4"
+                      min="1"
                     />
                   </div>
                 </div>
               </div>
 
-              {}
+              {/* Difficulty & Tags */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <label className="mb-1 block text-sm text-text-gray">
@@ -306,7 +331,7 @@ export default function RecipeCard_Add({
                 </div>
               </div>
 
-              {}
+              {/* Ingredients */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-primary">Ingredients</h3>
@@ -326,16 +351,16 @@ export default function RecipeCard_Add({
                           type="text"
                           value={ing.name}
                           onChange={(e) => updateIngredient(idx, "name", e.target.value)}
-                          placeholder="Name"
+                          placeholder="Name *"
                           className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-text-light focus:border-primary focus:outline-none"
                         />
                       </div>
                       <div className="sm:col-span-2">
                         <input
                           type="number"
-                          value={ing.amount}
-                          onChange={(e) => updateIngredient(idx, "amount", parseFloat(e.target.value) || 0)}
-                          placeholder="Amount"
+                          value={ing.amount ?? ""}
+                          onChange={(e) => updateIngredient(idx, "amount", e.target.value === "" ? null : parseFloat(e.target.value))}
+                          placeholder="Amount *"
                           className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-text-light focus:border-primary focus:outline-none"
                         />
                       </div>
@@ -344,7 +369,7 @@ export default function RecipeCard_Add({
                           type="text"
                           value={ing.type_amount}
                           onChange={(e) => updateIngredient(idx, "type_amount", e.target.value)}
-                          placeholder="Unit (e.g., grams, cups, tbsp)"
+                          placeholder="Unit * (e.g., grams, cups)"
                           className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-text-light focus:border-primary focus:outline-none"
                         />
                       </div>
@@ -374,7 +399,7 @@ export default function RecipeCard_Add({
                 )}
               </div>
 
-              {}
+              {/* Steps */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-primary">Steps</h3>
@@ -393,7 +418,7 @@ export default function RecipeCard_Add({
                         value={step.desc}
                         onChange={(e) => updateStepDesc(idx, e.target.value)}
                         rows={1}
-                        placeholder={`Step ${idx + 1}`}
+                        placeholder={`Step ${idx + 1} *`}
                         className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-text-light focus:border-primary focus:outline-none"
                       />
                     </div>
@@ -411,7 +436,7 @@ export default function RecipeCard_Add({
                 )}
               </div>
 
-              {}
+              {/* Public checkbox */}
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -425,13 +450,14 @@ export default function RecipeCard_Add({
                 </label>
               </div>
 
-              {}
+              {/* Buttons */}
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={handleSubmit}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-primary to-dark py-2.5 font-semibold text-white transition hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/25"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-primary to-dark py-2.5 font-semibold text-white transition hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/25 disabled:opacity-50"
                 >
-                  Create Recipe
+                  {isSubmitting ? "Creating..." : "Create Recipe"}
                 </button>
                 <button
                   onClick={handleCloseModal}
